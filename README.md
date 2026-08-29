@@ -2,7 +2,7 @@
 
 **AI Agent MemoryHub** 是一个本地优先、可审计的跨 AI 客户端记忆同步项目。它把 Memory Hub 作为唯一 canonical 真源，把经授权、按目标生成的上下文投影交给 Claude Code、Claude Web 与其他适配器；不会把厂商内部的聊天历史或原生记忆误称为已写入。
 
-当前版本：`0.1.0`。计划公开仓库：
+当前版本：`0.1.0`。公开仓库：
 [`miku233333/aiagent-memoryhub`](https://github.com/miku233333/aiagent-memoryhub)。
 
 ## 桌面应用
