@@ -18,6 +18,7 @@ describe("resolveSidecarLaunchPlan", () => {
       appDataPath: "/Users/test/Library/Application Support",
       appPath: "/Applications/AI Agent MemoryHub.app/Contents/Resources/app.asar",
       isPackaged: true,
+      pathApi: path.posix,
       platform: "darwin",
       resourcesPath: "/Applications/AI Agent MemoryHub.app/Contents/Resources",
     });
@@ -57,6 +58,7 @@ describe("resolveSidecarLaunchPlan", () => {
       appDataPath: "/Users/test/Library/Application Support",
       appPath: "/workspace/desktop",
       isPackaged: false,
+      pathApi: path.posix,
       platform: "darwin",
       resourcesPath: "/workspace/desktop/node_modules/electron/dist/Electron.app/Contents/Resources",
     });
@@ -80,6 +82,7 @@ describe("buildSidecarEnvironment", () => {
       appDataPath: "/tmp/app-data",
       appPath: "/workspace/desktop",
       isPackaged: false,
+      pathApi: path.posix,
       platform: "darwin",
       resourcesPath: "/tmp/resources",
     });
