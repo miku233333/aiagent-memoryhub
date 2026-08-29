@@ -1,0 +1,8 @@
+{
+  "name": "omnimemory",
+  "transport": "streamable_http",
+  "url": "https://memory.example.com/mcp",
+  "headers": {
+    "Authorization": "Bearer ${MEMORY_HUB_TOKEN}"
+  }
+}

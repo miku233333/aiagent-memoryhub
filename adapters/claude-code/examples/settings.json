@@ -1,0 +1,69 @@
+{
+  "env": {
+    "MEMORY_HUB_URL": "http://127.0.0.1:8787",
+    "MEMORY_HUB_USER_ID": "replace-with-your-user-id",
+    "MEMORY_HUB_PROJECT_ID": "replace-with-your-project-id",
+    "MEMORY_HUB_TRANSCRIPT_MODE": "redacted",
+    "MEMORY_HUB_SECRET_MODE": "strict"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact|fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/adapters/claude-code/bin/hook.mjs"
+            ],
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/adapters/claude-code/bin/hook.mjs"
+            ],
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/adapters/claude-code/bin/hook.mjs"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "clear|resume|logout|prompt_input_exit|other",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/adapters/claude-code/bin/hook.mjs"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

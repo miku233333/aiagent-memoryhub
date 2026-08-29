@@ -1,0 +1,392 @@
+name: Release desktop
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  metadata:
+    name: Validate release source and metadata
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.contract.outputs.version }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the tag commit to be on protected main
+        id: source
+        shell: bash
+        run: |
+          if ! git show-ref --verify --quiet refs/remotes/origin/main; then
+            echo "Full-history checkout did not contain origin/main." >&2
+            exit 1
+          fi
+          source_sha="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          checked_out_sha="$(git rev-parse "HEAD^{commit}")"
+          if [[ "${source_sha}" != "${checked_out_sha}" ]]; then
+            echo "Checked-out source does not match the pushed tag commit." >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${source_sha}" refs/remotes/origin/main; then
+            echo "Release tag commit is not reachable from origin/main." >&2
+            exit 1
+          fi
+          echo "sha=${source_sha}" >>"${GITHUB_OUTPUT}"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+      - name: Validate version, Electron, targets, and update provider
+        id: contract
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node <<'NODE'
+          const assert = require("node:assert/strict");
+          const fs = require("node:fs");
+          const pkg = require("./desktop/package.json");
+
+          assert.equal(pkg.version, fs.readFileSync("VERSION", "utf8").trim());
+          assert.equal(process.env.RELEASE_TAG, `v${pkg.version}`, "tag must match desktop version");
+          assert.equal(pkg.devDependencies.electron, "40.10.6");
+          assert.equal(pkg.devDependencies["electron-builder"], "26.15.3");
+          assert.equal(pkg.build.appId, "com.miku233333.memoryhub");
+          assert.equal(pkg.build.productName, "AI Agent MemoryHub");
+          assert.equal(pkg.build.artifactName, "AI-Agent-MemoryHub-${version}-${os}-${arch}.${ext}");
+          assert.deepEqual(pkg.build.mac.target, ["dmg", "zip"]);
+          assert.equal(pkg.build.win.target[0].target, "nsis");
+          assert.deepEqual(pkg.build.win.target[0].arch, ["x64"]);
+          assert.deepEqual(pkg.build.publish, {
+            provider: "github",
+            owner: "miku233333",
+            repo: "aiagent-memoryhub",
+          });
+          const backendResource = pkg.build.extraResources.find((item) => item.to === "Backend");
+          const webResource = pkg.build.extraResources.find((item) => item.to === "Web");
+          assert.equal(backendResource.from, "resources/Backend");
+          assert.equal(webResource.from, "../web/dist");
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${pkg.version}\n`);
+          NODE
+
+  package-macos:
+    name: Package macOS
+    needs:
+      - quality
+      - metadata
+    runs-on: macos-15
+    environment: release-signing
+    permissions:
+      contents: read
+    outputs:
+      official: ${{ steps.verify.outputs.official }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.metadata.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          enable-cache: true
+      - uses: pnpm/action-setup@a15d269cd4658e1107c09f1fabf4cbd7bd1f308a # v4.4.0
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Package DMG and ZIP
+        id: package
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          private_supplied=0
+          for value in "${CSC_LINK:-}" "${CSC_KEY_PASSWORD:-}" "${APPLE_ID:-}" \
+            "${APPLE_APP_SPECIFIC_PASSWORD:-}"; do
+            [[ -n "${value}" ]] && private_supplied=1
+          done
+          if [[ -n "${CSC_LINK:-}" && -n "${CSC_KEY_PASSWORD:-}" \
+            && -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" \
+            && "${APPLE_TEAM_ID:-}" =~ ^[A-Z0-9]{10}$ ]]; then
+            official=true
+          elif [[ "${private_supplied}" == "0" ]]; then
+            official=false
+            unset APPLE_TEAM_ID
+            echo "::warning::No macOS signing/notary credentials; artifacts are ad hoc-signed, unnotarized test builds."
+          else
+            echo "Partial or invalid macOS signing configuration is not allowed." >&2
+            exit 1
+          fi
+          echo "official=${official}" >>"${GITHUB_OUTPUT}"
+          ./script/package_desktop.sh mac
+      - name: Verify every macOS container and stage exact artifacts
+        id: verify
+        shell: bash
+        env:
+          OFFICIAL_REQUESTED: ${{ steps.package.outputs.official }}
+          EXPECTED_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
+        run: |
+          case "$(uname -m)" in
+            arm64) arch=arm64 ;;
+            x86_64) arch=x64 ;;
+            *) echo "Unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          team_id=""
+          verifier_identity=()
+          if [[ "${OFFICIAL_REQUESTED}" == "true" ]]; then
+            team_id="${EXPECTED_TEAM_ID}"
+            verifier_identity=(--official --identity "${team_id}")
+          fi
+          ./script/verify_macos_artifacts.sh \
+            desktop/release "${RELEASE_VERSION}" "${arch}" \
+            "${OFFICIAL_REQUESTED}" "${team_id}"
+          python script/verify_release_artifacts.py verify \
+            --platform macos \
+            --release-dir desktop/release \
+            --version "${RELEASE_VERSION}" \
+            --arch "${arch}" \
+            --source-sha "${SOURCE_SHA}" \
+            --stage-dir release-assets/macos \
+            "${verifier_identity[@]}"
+          echo "official=${OFFICIAL_REQUESTED}" >>"${GITHUB_OUTPUT}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: macos-desktop
+          if-no-files-found: error
+          retention-days: 14
+          path: release-assets/macos
+
+  package-windows:
+    name: Package Windows
+    needs:
+      - quality
+      - metadata
+    runs-on: windows-latest
+    environment: release-signing
+    permissions:
+      contents: read
+    outputs:
+      official: ${{ steps.verify.outputs.official }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.metadata.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          enable-cache: true
+      - uses: pnpm/action-setup@a15d269cd4658e1107c09f1fabf4cbd7bd1f308a # v4.4.0
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Package NSIS installer
+        id: package
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          EXPECTED_PUBLISHER: ${{ vars.WIN_EXPECTED_PUBLISHER }}
+          EXPECTED_CERT_THUMBPRINT: ${{ vars.WIN_EXPECTED_CERT_THUMBPRINT }}
+        run: |
+          if [[ -n "${CSC_LINK:-}" && -n "${CSC_KEY_PASSWORD:-}" \
+            && -n "${EXPECTED_PUBLISHER:-}" \
+            && "${EXPECTED_CERT_THUMBPRINT:-}" =~ ^[A-Fa-f0-9]{40}$ ]]; then
+            official=true
+          elif [[ -z "${CSC_LINK:-}" && -z "${CSC_KEY_PASSWORD:-}" ]]; then
+            official=false
+            echo "::warning::No Windows signing credentials; artifacts are unsigned test builds."
+          else
+            echo "Partial or invalid Windows signing configuration is not allowed." >&2
+            exit 1
+          fi
+          echo "official=${official}" >>"${GITHUB_OUTPUT}"
+          ./script/package_desktop.sh win
+      - name: Verify Windows signer and stage exact artifacts
+        id: verify
+        shell: bash
+        env:
+          OFFICIAL_REQUESTED: ${{ steps.package.outputs.official }}
+          EXPECTED_PUBLISHER: ${{ vars.WIN_EXPECTED_PUBLISHER }}
+          EXPECTED_CERT_THUMBPRINT: ${{ vars.WIN_EXPECTED_CERT_THUMBPRINT }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
+        run: |
+          installer="desktop/release/AI-Agent-MemoryHub-${RELEASE_VERSION}-win-x64.exe"
+          verifier_identity=()
+          if [[ "${OFFICIAL_REQUESTED}" == "true" ]]; then
+            INSTALLER_PATH="${installer}" powershell -NoProfile -NonInteractive -Command '
+              $unpacked = Join-Path $PWD "desktop/release/win-unpacked"
+              $mainExecutable = Join-Path $unpacked "AI Agent MemoryHub.exe"
+              $sidecar = Join-Path $unpacked "resources/Backend/ai-agent-memoryhub-sidecar.exe"
+              if (-not (Test-Path -LiteralPath $mainExecutable -PathType Leaf) -or
+                  -not (Test-Path -LiteralPath $sidecar -PathType Leaf)) {
+                Write-Error "Windows package is missing the app or backend sidecar executable."
+                exit 1
+              }
+              $executables = @($env:INSTALLER_PATH) + @(
+                Get-ChildItem -LiteralPath $unpacked -Recurse -File -Filter "*.exe" |
+                  ForEach-Object { $_.FullName }
+              )
+              foreach ($executable in $executables) {
+                $signature = Get-AuthenticodeSignature -LiteralPath $executable
+                if ($signature.Status -ne "Valid" -or $null -eq $signature.SignerCertificate) {
+                  Write-Error "Authenticode status for ${executable}: $($signature.Status)"
+                  exit 1
+                }
+                if ($signature.SignerCertificate.Subject -cne $env:EXPECTED_PUBLISHER) {
+                  Write-Error "Signer subject did not match for ${executable}."
+                  exit 1
+                }
+                $actual = ($signature.SignerCertificate.Thumbprint -replace "[^0-9A-Fa-f]", "").ToUpperInvariant()
+                $expected = ($env:EXPECTED_CERT_THUMBPRINT -replace "[^0-9A-Fa-f]", "").ToUpperInvariant()
+                if ($expected.Length -ne 40 -or $actual -cne $expected) {
+                  Write-Error "Signer certificate thumbprint did not match for ${executable}."
+                  exit 1
+                }
+              }
+            '
+            normalized_thumbprint="$(printf '%s' "${EXPECTED_CERT_THUMBPRINT}" | tr '[:lower:]' '[:upper:]')"
+            verifier_identity=(--official --identity "${EXPECTED_PUBLISHER}#${normalized_thumbprint}")
+          fi
+          python script/verify_release_artifacts.py verify \
+            --platform windows \
+            --release-dir desktop/release \
+            --version "${RELEASE_VERSION}" \
+            --arch x64 \
+            --source-sha "${SOURCE_SHA}" \
+            --stage-dir release-assets/windows \
+            "${verifier_identity[@]}"
+          echo "official=${OFFICIAL_REQUESTED}" >>"${GITHUB_OUTPUT}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-desktop
+          if-no-files-found: error
+          retention-days: 14
+          path: release-assets/windows
+
+  publish:
+    name: Publish verified release or safe draft
+    needs:
+      - metadata
+      - package-macos
+      - package-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.metadata.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: "*-desktop"
+          path: release-assets
+          merge-multiple: true
+      - name: Revalidate source-bound artifact manifests
+        run: |
+          python script/verify_release_artifacts.py validate-staged \
+            --assets-dir release-assets \
+            --manifest release-assets/macos.json \
+            --manifest release-assets/windows.json \
+            --source-sha "${{ needs.metadata.outputs.source_sha }}" \
+            --version "${{ needs.metadata.outputs.version }}"
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd release-assets
+          find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' \
+            -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS.txt
+      - name: Publish with trust classification
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MACOS_OFFICIAL: ${{ needs.package-macos.outputs.official }}
+          WINDOWS_OFFICIAL: ${{ needs.package-windows.outputs.official }}
+        run: |
+          assets=()
+          while IFS= read -r -d '' asset; do
+            assets+=("${asset}")
+          done < <(find release-assets -maxdepth 1 -type f -print0 | sort -z)
+
+          if [[ "${MACOS_OFFICIAL}" == "true" && "${WINDOWS_OFFICIAL}" == "true" ]]; then
+            cat >release-notes.md <<'EOF'
+          Official AI Agent MemoryHub desktop release.
+
+          - macOS: exact Developer ID Team ID, signature chain, Gatekeeper, and notarization staple verified in both DMG and ZIP.
+          - Windows: exact publisher subject and certificate thumbprint verified.
+          - Update metadata filenames, sizes, and SHA-512 values match every installer payload.
+          - Source-bound platform manifests and checksums are included.
+          EOF
+            if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+              existing="$(gh release view "${GITHUB_REF_NAME}" --json isDraft,isPrerelease \
+                --jq '[.isDraft,.isPrerelease] | @tsv')"
+              if [[ "${existing}" == $'false\tfalse' ]]; then
+                echo "Published stable releases are immutable; refusing to replace assets." >&2
+                exit 1
+              fi
+              gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" --clobber
+              gh release edit "${GITHUB_REF_NAME}" --draft=false --prerelease=false \
+                --title "AI Agent MemoryHub ${GITHUB_REF_NAME}" --notes-file release-notes.md
+            else
+              gh release create "${GITHUB_REF_NAME}" "${assets[@]}" --verify-tag \
+                --title "AI Agent MemoryHub ${GITHUB_REF_NAME}" --notes-file release-notes.md
+            fi
+          else
+            cat >release-notes.md <<'EOF'
+          UNSIGNED OR UNNOTARIZED TEST BUILD — NOT A STABLE RELEASE.
+
+          One or more platform trust checks were not eligible because complete
+          signing credentials were unavailable. These artifacts are retained for
+          testing only. Do not represent this draft as signed, notarized, or stable.
+          EOF
+            if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+              existing="$(gh release view "${GITHUB_REF_NAME}" --json isDraft,isPrerelease \
+                --jq '[.isDraft,.isPrerelease] | @tsv')"
+              if [[ "${existing}" == $'false\tfalse' ]]; then
+                echo "::warning::A published stable release already exists; unsigned artifacts remain in Actions only."
+                exit 0
+              fi
+              gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" --clobber
+              gh release edit "${GITHUB_REF_NAME}" --draft --prerelease \
+                --title "AI Agent MemoryHub ${GITHUB_REF_NAME} (UNVERIFIED)" \
+                --notes-file release-notes.md
+            else
+              gh release create "${GITHUB_REF_NAME}" "${assets[@]}" --verify-tag \
+                --draft --prerelease \
+                --title "AI Agent MemoryHub ${GITHUB_REF_NAME} (UNVERIFIED)" \
+                --notes-file release-notes.md
+            fi
+          fi

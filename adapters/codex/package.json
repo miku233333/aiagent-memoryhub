@@ -1,0 +1,19 @@
+{
+  "name": "@omnimemory/adapter-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "bin": {
+    "omnimemory-hub": "./bin/hub.mjs"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/config.mjs && node --check src/client.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

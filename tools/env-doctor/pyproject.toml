@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "omnimemory-env-doctor"
+version = "0.1.0"
+description = "Safe, dry-run-first environment diagnostics for OmniMemory integrations"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+
+[project.scripts]
+omnimemory-env = "env_doctor.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["env_doctor"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

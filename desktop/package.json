@@ -1,0 +1,107 @@
+{
+  "name": "ai-agent-memoryhub-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "author": "miku233333",
+  "description": "Secure Electron desktop shell for AI Agent MemoryHub",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "npm run compile",
+    "compile": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start": "npm run compile && electron .",
+    "pack": "npm run compile && electron-builder --dir --publish never",
+    "dist": "npm run compile && electron-builder --publish never",
+    "dist:win": "npm run compile && electron-builder --win nsis --publish never",
+    "dist:mac": "npm run compile && electron-builder --mac dmg zip --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.0",
+    "electron": "40.10.6",
+    "electron-builder": "26.15.3",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
+  },
+  "build": {
+    "appId": "com.miku233333.memoryhub",
+    "productName": "AI Agent MemoryHub",
+    "artifactName": "AI-Agent-MemoryHub-${version}-${os}-${arch}.${ext}",
+    "afterPack": "scripts/afterPack.cjs",
+    "afterSign": "scripts/afterSign.cjs",
+    "asar": true,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/Backend",
+        "to": "Backend",
+        "filter": [
+          "ai-agent-memoryhub-sidecar",
+          "ai-agent-memoryhub-sidecar.exe"
+        ]
+      },
+      {
+        "from": "../web/dist",
+        "to": "Web",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/icons",
+        "to": "Icons",
+        "filter": [
+          "icon.png"
+        ]
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "icon": "resources/icons/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "icon": "resources/icons/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "miku233333",
+      "repo": "aiagent-memoryhub"
+    }
+  }
+}

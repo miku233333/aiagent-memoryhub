@@ -1,0 +1,13 @@
+{
+  "name": "@ai-memory-sync/claude-code-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check bin/hook.mjs && node --check src/config.mjs && node --check src/hook-handler.mjs && node --check src/hub-client.mjs"
+  }
+}

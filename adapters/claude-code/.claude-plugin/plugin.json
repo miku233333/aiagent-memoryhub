@@ -1,0 +1,13 @@
+{
+  "name": "ai-memory-sync",
+  "description": "Inject scoped Memory Hub context and checkpoint Claude Code transcripts without blocking Claude Code.",
+  "version": "0.1.0",
+  "author": {
+    "name": "AI Memory Sync"
+  },
+  "keywords": [
+    "memory",
+    "sync",
+    "context"
+  ]
+}

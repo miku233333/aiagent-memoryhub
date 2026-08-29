@@ -1,0 +1,20 @@
+{
+  "schema_version": "v1",
+  "note": "Deployment reference only; Claude asks for the connector name and URL rather than importing this file.",
+  "connector": {
+    "name": "AI Memory Sync",
+    "url": "https://memory.example.com/mcp",
+    "transport": "streamable_http",
+    "authentication": "oauth_2_0"
+  },
+  "memory_sync": {
+    "target": "claude_web",
+    "scope_source": "fixed_environment",
+    "canonical_memory_is_immutable": true,
+    "cross_cultural_polish_setting": "cross_cultural_polish",
+    "lifecycle_hooks_available": false,
+    "write_tools_enabled_by_default": false,
+    "writes_require_separate_hub_review": true,
+    "delivery_claim_without_readback": "delivered_unverified"
+  }
+}

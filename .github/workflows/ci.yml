@@ -1,0 +1,174 @@
+name: CI
+
+on:
+  workflow_call:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-15
+          - windows-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          enable-cache: true
+      - name: Run backend tests
+        run: uv run --project backend --frozen --extra dev pytest -c backend/pyproject.toml backend/tests
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@a15d269cd4658e1107c09f1fabf4cbd7bd1f308a # v4.4.0
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Install locked dependencies
+        run: pnpm --dir web install --frozen-lockfile
+      - name: Test
+        run: pnpm --dir web test
+      - name: Build
+        run: pnpm --dir web build
+
+  desktop:
+    name: Desktop (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-15
+          - windows-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install locked dependencies
+        run: npm --prefix desktop ci
+      - name: Test
+        run: npm --prefix desktop test
+      - name: Typecheck
+        run: npm --prefix desktop run typecheck
+      - name: Build
+        run: npm --prefix desktop run build
+
+  adapters:
+    name: Adapters and environment doctor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Claude Code adapter
+        run: |
+          npm --prefix adapters/claude-code test
+          npm --prefix adapters/claude-code run check
+      - name: Claude Web adapter
+        run: |
+          npm --prefix adapters/claude-web test
+          npm --prefix adapters/claude-web run check
+      - name: Codex adapter
+        run: npm --prefix adapters/codex test
+      - name: OpenClaw adapter
+        run: npm --prefix adapters/openclaw test
+      - name: Hermes adapter
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python -m unittest discover -s adapters/hermes/tests
+      - name: Environment doctor
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: tools/env-doctor
+        run: python -m unittest discover -s tools/env-doctor/tests
+      - name: Parse adapter JSON templates
+        run: |
+          while IFS= read -r -d '' file; do
+            node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))' "$file"
+          done < <(find adapters -path '*/node_modules/*' -prune -o -type f -name '*.json' -print0)
+
+  repository-contract:
+    name: Scripts and repository contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
+      - name: Validate shell scripts
+        run: |
+          test -x script/build_and_run.sh
+          test -x script/package_desktop.sh
+          bash -n script/build_and_run.sh script/package_desktop.sh
+          shellcheck script/build_and_run.sh script/package_desktop.sh
+      - name: Parse Python and Codex environment files
+        run: |
+          python - <<'PY'
+          import ast
+          import pathlib
+          import tomllib
+
+          ast.parse(pathlib.Path("backend/packaging/sidecar_entry.py").read_text())
+          compile(
+              pathlib.Path("backend/packaging/ai-agent-memoryhub-sidecar.spec").read_text(),
+              "backend/packaging/ai-agent-memoryhub-sidecar.spec",
+              "exec",
+          )
+          with pathlib.Path(".codex/environments/environment.toml").open("rb") as stream:
+              environment = tomllib.load(stream)
+          assert environment["actions"][0]["command"] == "./script/build_and_run.sh"
+          PY
+      - name: Parse workflow and issue-template YAML
+        run: |
+          ruby -e 'require "yaml"; Dir[".github/**/*.{yml,yaml}"].sort.each { |path| YAML.parse_file(path) }'
+      - name: Verify release pipeline contracts
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python -m unittest discover -s script/tests

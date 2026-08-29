@@ -1,0 +1,5 @@
+# TEMPLATE ONLY. The current Hub returns HTTP 501 at /mcp.
+# Use this only after deploying a reviewed Streamable HTTP MCP bridge.
+[mcp_servers.omnimemory]
+url = "https://memory.example.com/mcp"
+bearer_token_env_var = "MEMORY_HUB_TOKEN"

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "omnimemory": {
+      "type": "http",
+      "url": "https://memory.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${MEMORY_HUB_TOKEN}"
+      }
+    }
+  }
+}

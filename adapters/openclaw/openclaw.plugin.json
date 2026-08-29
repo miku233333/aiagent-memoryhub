@@ -1,0 +1,15 @@
+{
+  "id": "omnimemory",
+  "name": "OmniMemory",
+  "description": "Inject approved Hub context into OpenClaw turns.",
+  "version": "0.1.0",
+  "activation": {
+    "onStartup": true,
+    "onCapabilities": ["hook"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

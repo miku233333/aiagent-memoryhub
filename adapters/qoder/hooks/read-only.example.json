@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["/ABSOLUTE/PATH/TO/AI agent sync/adapters/qoder/bin/hook.mjs"],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["/ABSOLUTE/PATH/TO/AI agent sync/adapters/qoder/bin/hook.mjs"],
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

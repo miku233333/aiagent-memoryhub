@@ -1,0 +1,9 @@
+{
+  "name": "AI Agent MemoryHub",
+  "transport": "streamable_http",
+  "url": "https://memory.example.com/mcp",
+  "authentication": {
+    "type": "oauth"
+  },
+  "mode": "read_only_context"
+}

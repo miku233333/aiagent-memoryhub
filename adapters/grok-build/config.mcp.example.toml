@@ -1,0 +1,4 @@
+# TEMPLATE ONLY. The current Hub /mcp endpoint returns HTTP 501.
+[mcp_servers.omnimemory]
+url = "https://memory.example.com/mcp"
+headers = { "Authorization" = "Bearer ${MEMORY_HUB_TOKEN}" }
