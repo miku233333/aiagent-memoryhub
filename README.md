@@ -1,5 +1,7 @@
 # AI Agent MemoryHub
 
+**简体中文** | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [English](README.en.md)
+
 **AI Agent MemoryHub** 是一个本地优先、可审计的跨 AI 客户端记忆同步项目。它把 Memory Hub 作为唯一 canonical 真源，把经授权、按目标生成的上下文投影交给 Claude Code、Claude Web 与其他适配器；不会把厂商内部的聊天历史或原生记忆误称为已写入。
 
 当前版本：`0.1.0`。公开仓库：
@@ -101,10 +103,6 @@ python3 -m env_doctor setup --project-root ../.. --user-id local-user --apply
 - [Claude Web MCP bridge](adapters/claude-web/README.md)：本地可验证 MCP 工具；接入真实 Claude Custom Connector 前必须增加公网 HTTPS、鉴权和部署级访问控制。
 
 “Hook 成功”只表示上下文已注入；“HTTP 2xx”只表示适配器已接收。只有目标以同一 nonce、scope 与 digest 回读时，界面才允许显示“已同步”。
-
-## 合规边界
-
-“Claude 帐号安全”与 Env Doctor 只帮助检查官方可用性、依赖、Hook/MCP、凭据暴露和本地隔离。项目不修改地区、时区、浏览器/设备指纹或代理身份，也不提供账号风控绕过、反检测或封禁规避。沙箱只用于限制文件、令牌和网络权限，不能用于欺骗平台资格判断。
 
 ## 验证
 
