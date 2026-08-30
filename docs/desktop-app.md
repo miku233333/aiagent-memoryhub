@@ -49,6 +49,19 @@ operating systems:
 - macOS: DMG and ZIP through `electron-builder`.
 - Windows: NSIS installer through `electron-builder`.
 
+The unpacked app directory produced internally by `electron-builder` is
+verified before delivery. Local builds discard it with the temporary build
+root. Native CI jobs may retain it briefly under the ignored
+`desktop/.release-verification` directory for identity checks in the next
+workflow step. Only the installer, archive, blockmaps, and update metadata
+enter `desktop/release`; users should never launch a raw intermediate app from
+the workspace.
+
+On Apple Silicon, Electron's ad hoc signature is reset immediately after its
+fuses are changed, before the app is signed again. Local macOS packages use an
+ad hoc signature only for launch testing; they are neither Developer ID signed
+nor notarized, and must not be described as hardened public releases.
+
 The backend sidecar is produced separately on each runner with Python 3.12 and
 PyInstaller. It is never cross-compiled. Release and standalone sidecar builds
 use the same committed `backend/packaging/ai-agent-memoryhub-sidecar.spec` and

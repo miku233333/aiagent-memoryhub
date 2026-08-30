@@ -134,7 +134,13 @@ def _digest(path: Path, algorithm: str) -> str:
     return hasher.hexdigest()
 
 
-def _expected_layout(platform: str, version: str, arch: str) -> tuple[list[str], str, list[str]]:
+def _expected_layout(
+    platform: str,
+    version: str,
+    arch: str,
+    *,
+    include_unpacked: bool = True,
+) -> tuple[list[str], str, list[str]]:
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?", version):
         raise VerificationError(f"invalid release version: {version!r}")
     if arch not in {"arm64", "x64"}:
@@ -149,13 +155,15 @@ def _expected_layout(platform: str, version: str, arch: str) -> tuple[list[str],
             f"{prefix}.zip.blockmap",
             "latest-mac.yml",
         ]
-        return artifacts, "latest-mac.yml", [f"mac-{arch}"]
+        expected_dirs = [f"mac-{arch}"] if include_unpacked else []
+        return artifacts, "latest-mac.yml", expected_dirs
     if platform == "windows":
         if arch != "x64":
             raise VerificationError("the committed Windows target supports x64 only")
         prefix = f"AI-Agent-MemoryHub-{version}-win-{arch}"
         artifacts = [f"{prefix}.exe", f"{prefix}.exe.blockmap", "latest.yml"]
-        return artifacts, "latest.yml", ["win-unpacked"]
+        expected_dirs = ["win-unpacked"] if include_unpacked else []
+        return artifacts, "latest.yml", expected_dirs
     raise VerificationError(f"unsupported platform: {platform!r}")
 
 
@@ -236,9 +244,13 @@ def verify_release(
     stage_directory: Path | None = None,
     official: bool = False,
     identity: str | None = None,
+    delivery_only: bool = False,
 ) -> dict[str, Any]:
     expected_files, metadata_name, expected_dirs = _expected_layout(
-        platform, version, arch
+        platform,
+        version,
+        arch,
+        include_unpacked=not delivery_only,
     )
     _verify_file_set(release_directory, expected_files, expected_dirs)
 
@@ -452,6 +464,11 @@ def _parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--stage-dir", type=Path)
     verify_parser.add_argument("--official", action="store_true")
     verify_parser.add_argument("--identity")
+    verify_parser.add_argument(
+        "--delivery-only",
+        action="store_true",
+        help="require only publishable files and reject unpacked application directories",
+    )
 
     staged_parser = subparsers.add_parser("validate-staged")
     staged_parser.add_argument("--assets-dir", type=Path, required=True)
@@ -474,6 +491,7 @@ def main() -> int:
                 stage_directory=args.stage_dir,
                 official=args.official,
                 identity=args.identity,
+                delivery_only=args.delivery_only,
             )
         else:
             validate_staged(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import importlib.util
+import json
 import re
 import shutil
 import tempfile
@@ -121,6 +122,36 @@ class ArtifactVerifierTests(unittest.TestCase):
                     expected_version="0.1.0",
                 )
 
+    def test_delivery_layout_requires_artifact_files_and_no_unpacked_directory(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for platform, arch, unpacked_name in (
+                ("macos", "arm64", "mac-arm64"),
+                ("windows", "x64", "win-unpacked"),
+            ):
+                release = _fixture(root, platform)
+                with self.assertRaisesRegex(
+                    release_verifier.VerificationError,
+                    "release directories differ",
+                ):
+                    release_verifier.verify_release(
+                        platform=platform,
+                        release_directory=release,
+                        version="0.1.0",
+                        arch=arch,
+                        delivery_only=True,
+                    )
+                shutil.rmtree(release / unpacked_name)
+                release_verifier.verify_release(
+                    platform=platform,
+                    release_directory=release,
+                    version="0.1.0",
+                    arch=arch,
+                    delivery_only=True,
+                )
+
     def test_rejects_extra_release_file(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             release = _fixture(Path(temporary), "macos")
@@ -213,6 +244,7 @@ class WorkflowContractTests(unittest.TestCase):
         package = (REPOSITORY_ROOT / "desktop" / "package.json").read_text(
             encoding="utf-8"
         )
+        package_config = json.loads(package)
         packager = (REPOSITORY_ROOT / "script" / "package_desktop.sh").read_text(
             encoding="utf-8"
         )
@@ -224,12 +256,55 @@ class WorkflowContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('"afterPack": "scripts/afterPack.cjs"', package)
         self.assertIn('"afterSign": "scripts/afterSign.cjs"', package)
+        self.assertIs(
+            package_config["build"]["electronFuses"]["resetAdHocDarwinSignature"],
+            True,
+        )
         self.assertIn('"MEMORY_HUB_ADHOC_SIGN=1"', packager)
+        self.assertIn("unset MEMORY_HUB_ADHOC_SIGN", packager)
         self.assertIn('--config.directories.output="${electron_release_directory}"', packager)
         self.assertIn('"/usr/bin/xattr"', hook)
         self.assertNotIn('"--sign",', hook)
         self.assertIn('"--sign",', sign_hook)
         self.assertIn('"-",', sign_hook)
+
+    def test_packager_keeps_unpacked_apps_out_of_the_delivery_directory(self) -> None:
+        packager = (REPOSITORY_ROOT / "script" / "package_desktop.sh").read_text(
+            encoding="utf-8"
+        )
+        verify_position = packager.index(
+            '"${python_command}" "${SCRIPT_DIR}/verify_release_artifacts.py" verify'
+        )
+        quarantine_position = packager.index(
+            'mv -- "${unpacked_directory}" "${temporary_root}/verified-unpacked"'
+        )
+        publish_position = packager.index(
+            'mv -- "${electron_release_directory}" "${RELEASE_DIRECTORY}"'
+        )
+        self.assertLess(verify_position, quarantine_position)
+        self.assertLess(quarantine_position, publish_position)
+        self.assertRegex(
+            packager,
+            r'find "\$\{electron_release_directory\}"\s*\\?\s*'
+            r'-mindepth 1 -maxdepth 1 ! -type f',
+        )
+        self.assertIn("MEMORY_HUB_RETAIN_VERIFICATION_OUTPUT", packager)
+        self.assertIn('"${VERIFICATION_DIRECTORY}"', packager)
+
+    def test_release_workflow_verifies_hidden_build_evidence_then_delivery_files(
+        self,
+    ) -> None:
+        workflow = (REPOSITORY_ROOT / ".github/workflows/release.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(
+            workflow.count('MEMORY_HUB_RETAIN_VERIFICATION_OUTPUT: "1"'),
+            2,
+        )
+        self.assertIn('desktop/.release-verification/mac-${arch}', workflow)
+        self.assertIn('desktop/.release-verification/win-unpacked', workflow)
+        self.assertEqual(workflow.count("--delivery-only"), 2)
+        self.assertNotIn('desktop/release/win-unpacked', workflow)
 
     def test_packager_strips_secrets_before_build_commands(self) -> None:
         packager = (REPOSITORY_ROOT / "script" / "package_desktop.sh").read_text(

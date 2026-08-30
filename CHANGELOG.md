@@ -29,3 +29,11 @@ uses semantic versioning once public releases begin.
   outside the project scope.
 - Public remote deployment still requires authenticated scope binding, TLS,
   DLP, and verified delivery receipts.
+
+### Fixed
+
+- Keep electron-builder's unpacked app out of the delivery directory after
+  verification, preventing cloud-backed workspace metadata from invalidating
+  its signature and causing an accidental launch crash.
+- Reset Electron's ad hoc signature immediately after fuse changes on Apple
+  Silicon, before the final signing stage.

@@ -8,9 +8,11 @@ WEB_DIRECTORY="${REPOSITORY_ROOT}/web"
 BACKEND_DIRECTORY="${REPOSITORY_ROOT}/backend"
 BACKEND_RESOURCE_DIRECTORY="${DESKTOP_DIRECTORY}/resources/Backend"
 RELEASE_DIRECTORY="${DESKTOP_DIRECTORY}/release"
+VERIFICATION_DIRECTORY="${DESKTOP_DIRECTORY}/.release-verification"
 PYINSTALLER_VERSION="6.22.2"
 readonly SCRIPT_DIR REPOSITORY_ROOT DESKTOP_DIRECTORY WEB_DIRECTORY
 readonly BACKEND_DIRECTORY BACKEND_RESOURCE_DIRECTORY RELEASE_DIRECTORY
+readonly VERIFICATION_DIRECTORY
 readonly PYINSTALLER_VERSION
 
 # Signing material is captured by this trusted wrapper and immediately removed
@@ -24,11 +26,20 @@ sign_codesign_identity="${MEMORY_HUB_CODESIGN_IDENTITY:-}"
 sign_apple_id="${APPLE_ID:-}"
 sign_apple_password="${APPLE_APP_SPECIFIC_PASSWORD:-}"
 sign_apple_team_id="${APPLE_TEAM_ID:-}"
+retain_verification_output="${MEMORY_HUB_RETAIN_VERIFICATION_OUTPUT:-0}"
 set +a
 export -n sign_csc_link sign_csc_key_password sign_csc_name
 export -n sign_codesign_identity sign_apple_id sign_apple_password sign_apple_team_id
 unset CSC_LINK CSC_KEY_PASSWORD CSC_NAME MEMORY_HUB_CODESIGN_IDENTITY
 unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+unset MEMORY_HUB_ADHOC_SIGN
+unset MEMORY_HUB_RETAIN_VERIFICATION_OUTPUT
+
+if [[ "${retain_verification_output}" != "0" \
+  && "${retain_verification_output}" != "1" ]]; then
+  printf 'MEMORY_HUB_RETAIN_VERIFICATION_OUTPUT must be 0 or 1.\n' >&2
+  exit 2
+fi
 
 target="${1:-}"
 case "${target}" in
@@ -97,6 +108,12 @@ if [[ -e "${RELEASE_DIRECTORY}" ]]; then
   printf 'Move or remove that exact directory before packaging again.\n' >&2
   exit 1
 fi
+if [[ -e "${VERIFICATION_DIRECTORY}" ]]; then
+  printf 'Refusing to overwrite existing verification evidence at %s.\n' \
+    "${VERIFICATION_DIRECTORY}" >&2
+  printf 'Move or remove that exact directory before packaging again.\n' >&2
+  exit 1
+fi
 
 python_command="${PYTHON_BIN:-}"
 if [[ -z "${python_command}" ]]; then
@@ -127,6 +144,7 @@ backend_was_present=0
 resources_staged=0
 package_completed=0
 local_adhoc_signing=0
+verification_output_created=0
 
 validate_resource_paths() {
   [[ "${BACKEND_RESOURCE_DIRECTORY}" == "${REPOSITORY_ROOT}/desktop/resources/Backend" ]]
@@ -134,6 +152,11 @@ validate_resource_paths() {
 
 validate_release_path() {
   [[ "${RELEASE_DIRECTORY}" == "${REPOSITORY_ROOT}/desktop/release" ]]
+}
+
+validate_verification_path() {
+  [[ "${VERIFICATION_DIRECTORY}" == \
+    "${REPOSITORY_ROOT}/desktop/.release-verification" ]]
 }
 
 restore_resources() {
@@ -165,6 +188,17 @@ cleanup() {
         "${RELEASE_DIRECTORY}" >&2
     else
       printf 'Refusing to clean unexpected release path.\n' >&2
+    fi
+  fi
+  if [[ "${package_completed}" != "1" \
+    && "${verification_output_created}" == "1" \
+    && -e "${VERIFICATION_DIRECTORY}" ]]; then
+    if validate_verification_path; then
+      rm -rf -- "${VERIFICATION_DIRECTORY}"
+      printf 'Removed incomplete verification evidence at %s.\n' \
+        "${VERIFICATION_DIRECTORY}" >&2
+    else
+      printf 'Refusing to clean unexpected verification path.\n' >&2
     fi
   fi
   sign_csc_link=""
@@ -328,7 +362,43 @@ if [[ "${target}" == "mac" && "${local_adhoc_signing}" == "1" ]]; then
     false ""
 fi
 
+# The unpacked application is an electron-builder intermediate, not a
+# distributable. A cloud-backed workspace can attach Finder/FileProvider
+# metadata after it is moved, invalidating its signature and making an
+# accidental launch look like an application crash. Keep only the verified
+# installer/update files in the delivery directory.
+if [[ "${target}" == "mac" ]]; then
+  unpacked_directory="${electron_release_directory}/mac-${target_arch}"
+else
+  unpacked_directory="${electron_release_directory}/win-unpacked"
+fi
+if [[ ! -d "${unpacked_directory}" || -L "${unpacked_directory}" ]]; then
+  printf 'Verified unpacked application directory is missing: %s\n' \
+    "${unpacked_directory}" >&2
+  exit 1
+fi
+if [[ "${retain_verification_output}" == "1" ]]; then
+  validate_verification_path
+  mkdir -m 700 -- "${VERIFICATION_DIRECTORY}"
+  verification_output_created=1
+  mv -- "${unpacked_directory}" \
+    "${VERIFICATION_DIRECTORY}/$(basename -- "${unpacked_directory}")"
+else
+  mv -- "${unpacked_directory}" "${temporary_root}/verified-unpacked"
+fi
+unexpected_entry="$(find "${electron_release_directory}" \
+  -mindepth 1 -maxdepth 1 ! -type f -print -quit)"
+if [[ -n "${unexpected_entry}" ]]; then
+  printf 'Refusing to publish a non-artifact entry: %s\n' \
+    "${unexpected_entry}" >&2
+  exit 1
+fi
+
 mv -- "${electron_release_directory}" "${RELEASE_DIRECTORY}"
 package_completed=1
 printf 'Desktop artifacts are available under %s/release.\n' "${DESKTOP_DIRECTORY}"
+if [[ "${retain_verification_output}" == "1" ]]; then
+  printf 'Unpacked verification evidence is available under %s.\n' \
+    "${VERIFICATION_DIRECTORY}"
+fi
 printf 'Signing status is intentionally not asserted by this script; use release verification.\n'

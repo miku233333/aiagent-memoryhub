@@ -69,7 +69,7 @@ verification step; private certificate/notary secrets are not.
 
 A stable release requires both platform jobs to pass:
 
-- macOS: the build output, DMG, and ZIP each contain exactly the expected app;
+- macOS: hidden build evidence, DMG, and ZIP each contain exactly the expected app;
   each copy passes strict/deep signature verification, the configured Team ID,
   Gatekeeper assessment, and notarization staple validation;
 - Windows: `Get-AuthenticodeSignature` reports `Valid` for the installer and
@@ -77,10 +77,14 @@ A stable release requires both platform jobs to pass:
   publisher subject and certificate thumbprint match the configured identity
   exactly.
 
-Both platforms require one exact artifact set. The verifier rejects duplicate or
-extra files, validates the updater YAML filenames, sizes, and SHA-512 values, and
-emits a source-commit-bound SHA-256 manifest. The publish job revalidates both
-manifests after artifact download and emits `SHA256SUMS.txt`. Claims such as
+The unpacked application is retained only in the ignored
+`desktop/.release-verification` directory between the native package and
+identity-verification steps. It is never staged or uploaded. Both platforms
+require one exact delivery artifact set with no directories. The verifier
+rejects duplicate or extra entries, validates the updater YAML filenames,
+sizes, and SHA-512 values, and emits a source-commit-bound SHA-256 manifest.
+The publish job revalidates both manifests after artifact download and emits
+`SHA256SUMS.txt`. Claims such as
 "signed" or "notarized" must be based on those checks, not merely on the
 presence of secrets or a successful build. An already published stable release
 is immutable; the workflow refuses to replace its assets.

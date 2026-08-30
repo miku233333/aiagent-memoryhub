@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-if [[ "$#" -ne 5 ]]; then
-  printf 'Usage: %s RELEASE_DIR VERSION ARCH OFFICIAL EXPECTED_TEAM_ID\n' "$0" >&2
+if [[ "$#" -lt 5 || "$#" -gt 6 ]]; then
+  printf 'Usage: %s RELEASE_DIR VERSION ARCH OFFICIAL EXPECTED_TEAM_ID [UNPACKED_DIR]\n' \
+    "$0" >&2
   exit 2
 fi
 
@@ -11,10 +12,11 @@ version="$2"
 arch="$3"
 official="$4"
 expected_team_id="$5"
+unpacked_directory="${6:-${release_directory}/mac-${arch}}"
 app_name="AI Agent MemoryHub.app"
 bundle_identifier="com.miku233333.memoryhub"
 artifact_prefix="AI-Agent-MemoryHub-${version}-mac-${arch}"
-source_app="${release_directory}/mac-${arch}/${app_name}"
+source_app="${unpacked_directory}/${app_name}"
 zip_artifact="${release_directory}/${artifact_prefix}.zip"
 dmg_artifact="${release_directory}/${artifact_prefix}.dmg"
 temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/memoryhub-macos-verify.XXXXXX")"
@@ -22,7 +24,8 @@ zip_root="${temporary_root}/zip"
 dmg_root="${temporary_root}/dmg"
 dmg_attached=0
 readonly release_directory version arch official expected_team_id app_name
-readonly bundle_identifier artifact_prefix source_app zip_artifact dmg_artifact
+readonly unpacked_directory bundle_identifier artifact_prefix source_app
+readonly zip_artifact dmg_artifact
 readonly temporary_root zip_root dmg_root
 
 cleanup() {

@@ -122,6 +122,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          MEMORY_HUB_RETAIN_VERIFICATION_OUTPUT: "1"
         run: |
           private_supplied=0
           for value in "${CSC_LINK:-}" "${CSC_KEY_PASSWORD:-}" "${APPLE_ID:-}" \
@@ -164,12 +165,14 @@ jobs:
           fi
           ./script/verify_macos_artifacts.sh \
             desktop/release "${RELEASE_VERSION}" "${arch}" \
-            "${OFFICIAL_REQUESTED}" "${team_id}"
+            "${OFFICIAL_REQUESTED}" "${team_id}" \
+            "desktop/.release-verification/mac-${arch}"
           python script/verify_release_artifacts.py verify \
             --platform macos \
             --release-dir desktop/release \
             --version "${RELEASE_VERSION}" \
             --arch "${arch}" \
+            --delivery-only \
             --source-sha "${SOURCE_SHA}" \
             --stage-dir release-assets/macos \
             "${verifier_identity[@]}"
@@ -219,6 +222,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
           EXPECTED_PUBLISHER: ${{ vars.WIN_EXPECTED_PUBLISHER }}
           EXPECTED_CERT_THUMBPRINT: ${{ vars.WIN_EXPECTED_CERT_THUMBPRINT }}
+          MEMORY_HUB_RETAIN_VERIFICATION_OUTPUT: "1"
         run: |
           if [[ -n "${CSC_LINK:-}" && -n "${CSC_KEY_PASSWORD:-}" \
             && -n "${EXPECTED_PUBLISHER:-}" \
@@ -247,7 +251,7 @@ jobs:
           verifier_identity=()
           if [[ "${OFFICIAL_REQUESTED}" == "true" ]]; then
             INSTALLER_PATH="${installer}" powershell -NoProfile -NonInteractive -Command '
-              $unpacked = Join-Path $PWD "desktop/release/win-unpacked"
+              $unpacked = Join-Path $PWD "desktop/.release-verification/win-unpacked"
               $mainExecutable = Join-Path $unpacked "AI Agent MemoryHub.exe"
               $sidecar = Join-Path $unpacked "resources/Backend/ai-agent-memoryhub-sidecar.exe"
               if (-not (Test-Path -LiteralPath $mainExecutable -PathType Leaf) -or
@@ -285,6 +289,7 @@ jobs:
             --release-dir desktop/release \
             --version "${RELEASE_VERSION}" \
             --arch x64 \
+            --delivery-only \
             --source-sha "${SOURCE_SHA}" \
             --stage-dir release-assets/windows \
             "${verifier_identity[@]}"

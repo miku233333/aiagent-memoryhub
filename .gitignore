@@ -7,6 +7,7 @@ DerivedData/
 *.xcarchive
 *.dmg
 desktop/release/
+desktop/.release-verification/
 .vite/
 coverage/
 .playwright-cli/
