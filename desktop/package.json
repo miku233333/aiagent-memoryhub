@@ -36,7 +36,7 @@
     "electronFuses": {
       "resetAdHocDarwinSignature": true,
       "runAsNode": false,
-      "enableCookieEncryption": true,
+      "enableCookieEncryption": false,
       "enableNodeOptionsEnvironmentVariable": false,
       "enableNodeCliInspectArguments": false,
       "enableEmbeddedAsarIntegrityValidation": true,

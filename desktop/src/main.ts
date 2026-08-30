@@ -9,6 +9,7 @@ import {
   shell,
   type MessageBoxOptions,
   type MessageBoxReturnValue,
+  type Session,
 } from "electron";
 import { autoUpdater } from "electron-updater";
 
@@ -18,6 +19,7 @@ import { runEnvironmentCheck } from "./environmentDoctor";
 import { withHubAuthorization } from "./hubAuth";
 import { assertTrustedIpcRequest } from "./ipcPolicy";
 import { classifyNavigation } from "./navigationPolicy";
+import { createMemoryHubSession } from "./sessionPolicy";
 import {
   HubProcessController,
   loadOrCreateHubToken,
@@ -41,7 +43,7 @@ let mainWindow: BrowserWindow | undefined;
 let recoveryInProgress = false;
 let updateService: UpdateService | undefined;
 
-function createMainWindow(): BrowserWindow {
+function createMainWindow(applicationSession: Session): BrowserWindow {
   const windowIcon = app.isPackaged
     ? path.join(process.resourcesPath, "Icons", "icon.png")
     : path.join(app.getAppPath(), "resources", "icons", "icon.png");
@@ -60,6 +62,7 @@ function createMainWindow(): BrowserWindow {
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.js"),
       sandbox: true,
+      session: applicationSession,
       webSecurity: true,
       webviewTag: false,
     },
@@ -114,8 +117,10 @@ async function openApprovedExternal(targetURL: string): Promise<void> {
   await shell.openExternal(targetURL);
 }
 
-function configureSessionSecurity(hubToken: string): void {
-  const applicationSession = session.defaultSession;
+function configureSessionSecurity(
+  applicationSession: Session,
+  hubToken: string,
+): void {
   applicationSession.setPermissionCheckHandler(() => false);
   applicationSession.setPermissionRequestHandler(
     (_webContents, _permission, callback) => callback(false),
@@ -360,8 +365,12 @@ async function startApplication(): Promise<void> {
     resourcesPath: process.resourcesPath,
   });
   const hubToken = loadOrCreateHubToken(launchPlan.tokenPath);
-  configureSessionSecurity(hubToken);
-  mainWindow = createMainWindow();
+  const applicationSession = createMemoryHubSession(session);
+  configureSessionSecurity(applicationSession, hubToken);
+  mainWindow = createMainWindow(applicationSession);
+  if (mainWindow.webContents.session !== applicationSession) {
+    throw new Error("MemoryHub window is using an unexpected session");
+  }
   hubController = new HubProcessController({
     hubToken,
     launchPlan,

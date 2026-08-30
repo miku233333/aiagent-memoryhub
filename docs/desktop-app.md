@@ -20,6 +20,9 @@ flowchart LR
   external-link policy, and update state.
 - The renderer has `nodeIntegration` disabled, context isolation enabled, and
   receives only a narrow preload bridge.
+- The renderer uses a named in-memory Electron session with disk caching
+  disabled. Browser cookies, storage, and cache are not retained across app
+  restarts; durable product data belongs in the Hub instead.
 - The sidecar binds to loopback and serves both the API and packaged web UI.
 - Canonical SQLite data lives outside the application bundle, so an update
   does not replace user memory.
@@ -40,6 +43,15 @@ trusted value only for `/v1` requests to the exact
 `http://127.0.0.1:8787` origin. Health and static UI requests remain tokenless.
 Adapters prefer an explicit `MEMORY_HUB_TOKEN_FILE`, then a compatible
 `MEMORY_HUB_TOKEN`, and finally this private desktop file.
+
+The renderer does not use cookies for authentication. Its bearer is injected
+by the main process into the exact loopback origin, and the session is checked
+at runtime to remain non-persistent and have no storage path. Because there is
+no on-disk Cookie database, the Electron cookie-encryption fuse remains
+disabled; this also prevents ad hoc macOS test builds from requesting access
+to an obsolete `AI Agent MemoryHub Safe Storage` Keychain item. Reintroducing
+a persistent browser session would require an explicit encrypted-cookie
+migration and new release tests.
 
 ## Build targets
 

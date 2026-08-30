@@ -37,3 +37,6 @@ uses semantic versioning once public releases begin.
   its signature and causing an accidental launch crash.
 - Reset Electron's ad hoc signature immediately after fuse changes on Apple
   Silicon, before the final signing stage.
+- Keep the desktop renderer on an explicitly verified in-memory session and
+  disable the unused disk-cookie encryption fuse, preventing repeated macOS
+  Safe Storage prompts across ad hoc test builds.
